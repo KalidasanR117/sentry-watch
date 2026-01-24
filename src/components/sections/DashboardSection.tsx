@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { CameraFeed } from "@/components/dashboard/CameraFeed";
+import { RotatingCameraFeed } from "@/components/dashboard/RotatingCameraFeed";
 import { EventTimeline, EventItem } from "@/components/dashboard/EventTimeline";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { FaceList } from "@/components/dashboard/FaceList";
+import { VideoUpload } from "@/components/dashboard/VideoUpload";
+import { ReportsViewer } from "@/components/dashboard/ReportsViewer";
+import { AddFaceModal } from "@/components/dashboard/AddFaceModal";
 import { SeverityLevel } from "@/components/ui/SeverityBadge";
 import { 
   Shield, 
@@ -15,8 +18,13 @@ import {
   Activity,
   Clock,
   Eye,
-  Wifi
+  Wifi,
+  Upload,
+  FileText,
+  UserPlus,
+  X
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Mock data
 const mockCameras = [
@@ -40,19 +48,41 @@ const mockAlerts = [
   { id: "a3", message: "Suspicious gesture detected in Parking Lot", severity: "MEDIUM" as SeverityLevel, timestamp: "14:25:33" },
 ];
 
-const mockFaces = [
-  { id: "f1", name: "John Doe", status: "blacklist" as const, lastSeen: "14:28:12" },
-  { id: "f2", name: "Jane Smith", status: "blacklist" as const, lastSeen: "Yesterday" },
-  { id: "f3", name: "Admin User", status: "whitelist" as const, lastSeen: "Active" },
-  { id: "f4", name: "Security Staff", status: "whitelist" as const, lastSeen: "Active" },
-  { id: "f5", name: "Maintenance", status: "whitelist" as const, lastSeen: "12:00:00" },
-];
+type TabType = "live" | "upload" | "reports";
+
+interface FaceEntry {
+  id: string;
+  name: string;
+  status: "whitelist" | "blacklist";
+  lastSeen?: string;
+  imageUrl?: string;
+}
 
 export function DashboardSection() {
   const [alerts, setAlerts] = useState(mockAlerts);
+  const [activeTab, setActiveTab] = useState<TabType>("live");
+  const [showAddFaceModal, setShowAddFaceModal] = useState(false);
+  const [faces, setFaces] = useState<FaceEntry[]>([
+    { id: "f1", name: "John Doe", status: "blacklist", lastSeen: "14:28:12" },
+    { id: "f2", name: "Jane Smith", status: "blacklist", lastSeen: "Yesterday" },
+    { id: "f3", name: "Admin User", status: "whitelist", lastSeen: "Active" },
+    { id: "f4", name: "Security Staff", status: "whitelist", lastSeen: "Active" },
+    { id: "f5", name: "Maintenance", status: "whitelist", lastSeen: "12:00:00" },
+  ]);
   
   const dismissAlert = (id: string) => {
     setAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleAddFace = (face: { name: string; status: "whitelist" | "blacklist"; imageUrl?: string }) => {
+    const newFace: FaceEntry = {
+      id: `f${Date.now()}`,
+      name: face.name,
+      status: face.status,
+      lastSeen: "Just now",
+      imageUrl: face.imageUrl
+    };
+    setFaces(prev => [...prev, newFace]);
   };
   
   return (
@@ -116,27 +146,117 @@ export function DashboardSection() {
             variant="success"
           />
         </div>
+
+        {/* Tab Navigation */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="flex gap-2 mb-6"
+        >
+          {[
+            { id: "live" as TabType, label: "Live Monitor", icon: <Eye className="w-4 h-4" /> },
+            { id: "upload" as TabType, label: "Video Analysis", icon: <Upload className="w-4 h-4" /> },
+            { id: "reports" as TabType, label: "Reports", icon: <FileText className="w-4 h-4" /> },
+          ].map((tab) => (
+            <motion.button
+              key={tab.id}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all duration-300",
+                activeTab === tab.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </motion.button>
+          ))}
+        </motion.div>
         
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Camera Feeds - 2 columns */}
+          {/* Main Content - 2 columns */}
           <div className="lg:col-span-2 space-y-6">
-            <GlassCard>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-primary" />
-                  Live Feeds
-                </h3>
-                <span className="text-xs text-muted-foreground font-mono">
-                  {mockCameras.filter(c => c.status === "online").length} cameras online
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {mockCameras.map((camera) => (
-                  <CameraFeed key={camera.id} {...camera} />
-                ))}
-              </div>
-            </GlassCard>
+            <AnimatePresence mode="wait">
+              {activeTab === "live" && (
+                <motion.div
+                  key="live"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <GlassCard>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Eye className="w-5 h-5 text-primary" />
+                        Rotating Camera Feed
+                      </h3>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        Auto-rotation every 10s
+                      </span>
+                    </div>
+                    <RotatingCameraFeed 
+                      cameras={mockCameras} 
+                      rotationInterval={10}
+                      extendOnThreat={true}
+                    />
+                  </GlassCard>
+                </motion.div>
+              )}
+
+              {activeTab === "upload" && (
+                <motion.div
+                  key="upload"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <GlassCard>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Upload className="w-5 h-5 text-primary" />
+                        Video Analysis
+                      </h3>
+                      <span className="text-xs text-muted-foreground">
+                        Pose-based or Transformer processing
+                      </span>
+                    </div>
+                    <VideoUpload onProcessComplete={(results) => {
+                      console.log("Processing complete:", results);
+                    }} />
+                  </GlassCard>
+                </motion.div>
+              )}
+
+              {activeTab === "reports" && (
+                <motion.div
+                  key="reports"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <GlassCard>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-primary" />
+                        Generated Reports
+                      </h3>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        PDF analysis reports
+                      </span>
+                    </div>
+                    <ReportsViewer />
+                  </GlassCard>
+                </motion.div>
+              )}
+            </AnimatePresence>
             
             {/* Event Timeline */}
             <GlassCard>
@@ -165,15 +285,33 @@ export function DashboardSection() {
                   <Users className="w-5 h-5 text-primary" />
                   Face Database
                 </h3>
-                <span className="text-xs text-muted-foreground font-mono">
-                  {mockFaces.length} entries
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {faces.length} entries
+                  </span>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setShowAddFaceModal(true)}
+                    className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    title="Add new face"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                  </motion.button>
+                </div>
               </div>
-              <FaceList faces={mockFaces} />
+              <FaceList faces={faces} />
             </GlassCard>
           </div>
         </div>
       </div>
+
+      {/* Add Face Modal */}
+      <AddFaceModal
+        isOpen={showAddFaceModal}
+        onClose={() => setShowAddFaceModal(false)}
+        onAdd={handleAddFace}
+      />
     </section>
   );
 }
