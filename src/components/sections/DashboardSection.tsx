@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchEvents, fetchDashboardSummary, startLive } from "@/lib/api"; // BACKEND
 import { motion, AnimatePresence } from "framer-motion";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { RotatingCameraFeed } from "@/components/dashboard/RotatingCameraFeed";
@@ -10,45 +11,26 @@ import { VideoUpload } from "@/components/dashboard/VideoUpload";
 import { ReportsViewer } from "@/components/dashboard/ReportsViewer";
 import { AddFaceModal } from "@/components/dashboard/AddFaceModal";
 import { SeverityLevel } from "@/components/ui/SeverityBadge";
-import { 
-  Shield, 
-  Camera, 
-  AlertTriangle, 
-  Users, 
-  Activity,
+import {
+  Shield,
+  Camera,
+  AlertTriangle,
+  Users,
+  Activity, 
   Clock,
   Eye,
   Wifi,
   Upload,
   FileText,
   UserPlus,
-  X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Mock data
-const mockCameras = [
-  { id: "CAM-001", name: "Main Entrance", status: "online" as const, currentEvent: "Normal Activity", severity: "NORMAL" as SeverityLevel, personCount: 3 },
-  { id: "CAM-002", name: "Parking Lot", status: "online" as const, currentEvent: "Suspicious Gesture", severity: "MEDIUM" as SeverityLevel, personCount: 2 },
-  { id: "CAM-003", name: "Lobby", status: "online" as const, currentEvent: "Fight Detected", severity: "CRITICAL" as SeverityLevel, personCount: 4 },
-  { id: "CAM-004", name: "Back Exit", status: "offline" as const, personCount: 0 },
-];
-
-const mockEvents: EventItem[] = [
-  { id: "1", type: "Fight Detected", severity: "CRITICAL", timestamp: "14:32:45", cameraId: "CAM-003", trackId: "12", description: "Physical altercation detected between two individuals near the reception desk." },
-  { id: "2", type: "Blacklisted Person", severity: "CRITICAL", timestamp: "14:28:12", cameraId: "CAM-001", trackId: "8", description: "Known blacklisted individual 'John Doe' detected at main entrance." },
-  { id: "3", type: "Suspicious Gesture", severity: "MEDIUM", timestamp: "14:25:33", cameraId: "CAM-002", trackId: "5" },
-  { id: "4", type: "Running Detected", severity: "LOW", timestamp: "14:20:10", cameraId: "CAM-001", trackId: "3" },
-  { id: "5", type: "Loitering", severity: "LOW", timestamp: "14:15:22", cameraId: "CAM-004", trackId: "7" },
-];
-
-const mockAlerts = [
-  { id: "a1", message: "Fight detected in Lobby - Immediate attention required", severity: "CRITICAL" as SeverityLevel, timestamp: "14:32:45" },
-  { id: "a2", message: "Blacklisted person detected at Main Entrance", severity: "CRITICAL" as SeverityLevel, timestamp: "14:28:12" },
-  { id: "a3", message: "Suspicious gesture detected in Parking Lot", severity: "MEDIUM" as SeverityLevel, timestamp: "14:25:33" },
-];
-
 type TabType = "live" | "upload" | "reports";
+const playLive = () => fetch("/api/live/start", { method: "POST" });
+const pauseLive = () => fetch("/api/live/pause", { method: "POST" });
+const stopLive = () => fetch("/api/live/stop", { method: "POST" });
+const restartLive = () => fetch("/api/live/restart", { method: "POST" });
 
 interface FaceEntry {
   id: string;
@@ -58,33 +40,148 @@ interface FaceEntry {
   imageUrl?: string;
 }
 
+
 export function DashboardSection() {
-  const [alerts, setAlerts] = useState(mockAlerts);
+  /* ===================== BACKEND STATE ===================== */
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [liveActive, setLiveActive] = useState(false);
+  
+  /* ===================== UI STATE (UNCHANGED) ===================== */
   const [activeTab, setActiveTab] = useState<TabType>("live");
   const [showAddFaceModal, setShowAddFaceModal] = useState(false);
-  const [faces, setFaces] = useState<FaceEntry[]>([
-    { id: "f1", name: "John Doe", status: "blacklist", lastSeen: "14:28:12" },
-    { id: "f2", name: "Jane Smith", status: "blacklist", lastSeen: "Yesterday" },
-    { id: "f3", name: "Admin User", status: "whitelist", lastSeen: "Active" },
-    { id: "f4", name: "Security Staff", status: "whitelist", lastSeen: "Active" },
-    { id: "f5", name: "Maintenance", status: "whitelist", lastSeen: "12:00:00" },
-  ]);
+
+  const [faces, setFaces] = useState<FaceEntry[]>([]);
+  const [editingFace, setEditingFace] = useState<FaceEntry | null>(null);
   
+  const [cameraState, setCameraState] = useState<
+  "stopped" | "running" | "paused"
+>("stopped");
+
+  const handlePlay = async () => {
+  await playLive();
+  setCameraState("running");
+};
+
+const handlePause = async () => {
+  await pauseLive();
+  setCameraState("paused");
+};
+
+const handleStop = async () => {
+  await stopLive();
+  setCameraState("stopped");
+};
+
+const handleRestart = async () => {
+  await restartLive();
+  setCameraState("running");
+};
+
+
+  /* ===================== BACKEND POLLING ===================== */
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const eventsRes = await fetchEvents();
+        const summaryRes = await fetchDashboardSummary();
+
+        const mappedEvents: EventItem[] = (eventsRes.events || []).map(
+          (e: any, i: number) => ({
+            id: `${i}-${e.time}`,
+            type: e.type,
+            severity: e.severity as SeverityLevel,
+            timestamp: e.time,
+            cameraId: e.camera ?? "LIVE",
+            description: e.type,
+          })
+        );
+
+        const mappedAlerts = mappedEvents
+          .filter(
+            (e) => e.severity === "CRITICAL" || e.severity === "HIGH"
+          )
+          .map((e) => ({
+            id: e.id,
+            message: e.type,
+            severity: e.severity,
+            timestamp: e.timestamp,
+          }));
+
+        setEvents(mappedEvents);
+        setAlerts(mappedAlerts);
+        setStats(summaryRes);
+        // liveActive should reflect camera state, not events
+        setLiveActive(true);
+
+      } catch (err) {
+        console.error("Dashboard fetch failed:", err);
+      }
+    };
+
+    load();
+    const id = setInterval(load, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* ===================== CAMERA MODEL (REAL BACKEND STATE) ===================== */
+  const cameras = [
+    {
+      id: "LIVE",
+      name: "Live Surveillance",
+      status: liveActive ? "online" : "idle",
+      currentEvent: alerts[0]?.message ?? "Monitoring",
+      severity: alerts[0]?.severity ?? "NORMAL",
+      personCount: stats?.people_tracked ?? 0,
+    },
+  ];
+
   const dismissAlert = (id: string) => {
-    setAlerts(prev => prev.filter(a => a.id !== id));
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
-  const handleAddFace = (face: { name: string; status: "whitelist" | "blacklist"; imageUrl?: string }) => {
-    const newFace: FaceEntry = {
-      id: `f${Date.now()}`,
-      name: face.name,
-      status: face.status,
-      lastSeen: "Just now",
-      imageUrl: face.imageUrl
-    };
-    setFaces(prev => [...prev, newFace]);
-  };
-  
+ const handleAddFace = (face: {
+  id?: string;
+  name: string;
+  status: "whitelist" | "blacklist";
+  imageUrl?: string;
+}) => {
+  setFaces(prev => {
+    // EDIT MODE
+    if (editingFace) {
+      return prev.map(f =>
+        f.id === editingFace.id
+          ? {
+              ...f,
+              name: face.name,
+              status: face.status,
+              imageUrl: face.imageUrl,
+              lastSeen: "Updated just now",
+            }
+          : f
+      );
+    }
+
+    // ADD MODE
+    return [
+      ...prev,
+      {
+        id: `f-${Date.now()}`,
+        name: face.name,
+        status: face.status,
+        imageUrl: face.imageUrl,
+        lastSeen: "Just added",
+      },
+    ];
+  });
+
+  setEditingFace(null);
+};
+
+
+
+
   return (
     <section id="dashboard" className="py-16 px-4 relative">
       <div className="max-w-7xl mx-auto">
@@ -100,7 +197,9 @@ export function DashboardSection() {
               <Shield className="w-8 h-8 text-primary" />
               Command Center
             </h2>
-            <p className="text-muted-foreground mt-1">Real-time security monitoring dashboard</p>
+            <p className="text-muted-foreground mt-1">
+              Real-time security monitoring dashboard
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -113,41 +212,37 @@ export function DashboardSection() {
             </span>
           </div>
         </motion.div>
-        
-        {/* Stats Row */}
+
+        {/* Stats Row (REAL BACKEND VALUES) */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard
             title="Active Cameras"
-            value="3 / 4"
+            value={`${stats?.active_cameras ?? 1} / ${
+              stats?.total_cameras ?? 1
+            }`}
             icon={<Camera className="w-5 h-5" />}
             trend="neutral"
           />
           <StatCard
             title="Active Threats"
-            value="2"
+            value={`${stats?.active_threats ?? 0}`}
             icon={<AlertTriangle className="w-5 h-5" />}
-            trend="up"
-            trendValue="+1"
             variant="critical"
           />
           <StatCard
             title="People Tracked"
-            value="9"
+            value={`${stats?.people_tracked ?? 0}`}
             icon={<Users className="w-5 h-5" />}
-            trend="up"
-            trendValue="+3"
           />
           <StatCard
             title="Events Today"
-            value="47"
+            value={`${stats?.events_today ?? 0}`}
             icon={<Activity className="w-5 h-5" />}
-            trend="down"
-            trendValue="-12%"
             variant="success"
           />
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tabs */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -163,7 +258,9 @@ export function DashboardSection() {
               key={tab.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+              }}
               className={cn(
                 "px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all duration-300",
                 activeTab === tab.id
@@ -176,10 +273,9 @@ export function DashboardSection() {
             </motion.button>
           ))}
         </motion.div>
-        
+
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Content - 2 columns */}
           <div className="lg:col-span-2 space-y-6">
             <AnimatePresence mode="wait">
               {activeTab === "live" && (
@@ -191,48 +287,36 @@ export function DashboardSection() {
                   transition={{ duration: 0.3 }}
                 >
                   <GlassCard>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold flex items-center gap-2">
-                        <Eye className="w-5 h-5 text-primary" />
-                        Rotating Camera Feed
-                      </h3>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        Auto-rotation every 10s
-                      </span>
-                    </div>
-                    <RotatingCameraFeed 
-                      cameras={mockCameras} 
-                      rotationInterval={10}
-                      extendOnThreat={true}
-                    />
+                   <RotatingCameraFeed
+                        cameras={cameras}
+                        rotationInterval={10}
+                        extendOnThreat
+                        onPlay={handlePlay}
+                        onPause={handlePause}
+                        onStop={handleStop}
+                        onRestart={handleRestart}
+                      />
+
                   </GlassCard>
                 </motion.div>
               )}
 
-              {activeTab === "upload" && (
-                <motion.div
-                  key="upload"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <GlassCard>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold flex items-center gap-2">
-                        <Upload className="w-5 h-5 text-primary" />
-                        Video Analysis
-                      </h3>
-                      <span className="text-xs text-muted-foreground">
-                        Pose-based or Transformer processing
-                      </span>
-                    </div>
-                    <VideoUpload onProcessComplete={(results) => {
-                      console.log("Processing complete:", results);
-                    }} />
-                  </GlassCard>
-                </motion.div>
-              )}
+             {activeTab === "upload" && (
+  <motion.div
+    key="upload"
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    exit={{ opacity: 0, x: 20 }}
+    transition={{ duration: 0.3 }}
+  >
+    <GlassCard>
+      <VideoUpload onProcessComplete={() => {
+          // 🔥 Auto-switch to Live Monitor when upload finishes
+          setActiveTab("live"); 
+      }} />
+    </GlassCard>
+  </motion.div>
+)}
 
               {activeTab === "reports" && (
                 <motion.div
@@ -243,75 +327,64 @@ export function DashboardSection() {
                   transition={{ duration: 0.3 }}
                 >
                   <GlassCard>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-primary" />
-                        Generated Reports
-                      </h3>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        PDF analysis reports
-                      </span>
-                    </div>
                     <ReportsViewer />
                   </GlassCard>
                 </motion.div>
               )}
             </AnimatePresence>
-            
-            {/* Event Timeline */}
+
             <GlassCard>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-primary" />
-                  Event Timeline
-                </h3>
-                <a href="#" className="text-xs text-primary hover:underline">View All</a>
-              </div>
-              <EventTimeline events={mockEvents} maxItems={5} />
+              <EventTimeline events={events} maxItems={5} />
             </GlassCard>
           </div>
-          
-          {/* Sidebar - 1 column */}
+
           <div className="space-y-6">
-            {/* Alerts Panel */}
             <GlassCard>
               <AlertsPanel alerts={alerts} onDismiss={dismissAlert} />
             </GlassCard>
-            
-            {/* Face Database */}
-            <GlassCard>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  Face Database
-                </h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {faces.length} entries
-                  </span>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => setShowAddFaceModal(true)}
-                    className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                    title="Add new face"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </motion.button>
-                </div>
-              </div>
-              <FaceList faces={faces} />
-            </GlassCard>
+
+           <GlassCard>
+  <div className="flex items-center justify-between mb-4">
+    <h3 className="font-semibold flex items-center gap-2">
+      <Users className="w-5 h-5 text-primary" />
+      Face Database
+    </h3>
+    <button
+      onClick={() => setShowAddFaceModal(true)}
+      className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
+      title="Add face"
+    >
+      <UserPlus className="w-4 h-4 text-primary" />
+    </button>
+  </div>
+
+  <FaceList
+  faces={faces}
+  onEdit={(face) => {
+    setEditingFace(face);
+    setShowAddFaceModal(true);
+  }}
+  onDelete={(face) => {
+    setFaces(prev => prev.filter(f => f.id !== face.id));
+  }}
+/>
+
+</GlassCard>
+
           </div>
         </div>
       </div>
 
-      {/* Add Face Modal */}
       <AddFaceModal
-        isOpen={showAddFaceModal}
-        onClose={() => setShowAddFaceModal(false)}
-        onAdd={handleAddFace}
-      />
+  isOpen={showAddFaceModal}
+  editingFace={editingFace}
+  onClose={() => {
+    setShowAddFaceModal(false);
+    setEditingFace(null);
+  }}
+  onAdd={handleAddFace}
+/>
+
     </section>
   );
 }

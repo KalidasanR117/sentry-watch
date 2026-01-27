@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { 
@@ -14,15 +14,48 @@ import {
 
 interface AddFaceModalProps {
   isOpen: boolean;
+  editingFace?: {
+    id: string;
+    name: string;
+    status: "whitelist" | "blacklist";
+    imageUrl?: string;
+  } | null;
   onClose: () => void;
-  onAdd: (face: { name: string; status: "whitelist" | "blacklist"; imageUrl?: string }) => void;
+  onAdd: (face: {
+    name: string;
+    status: "whitelist" | "blacklist";
+    imageUrl?: string;
+  }) => void;
 }
 
-export function AddFaceModal({ isOpen, onClose, onAdd }: AddFaceModalProps) {
+
+export function AddFaceModal({
+  isOpen,
+  editingFace,
+  onClose,
+  onAdd,
+}: AddFaceModalProps) {
+
   const [name, setName] = useState("");
   const [status, setStatus] = useState<"whitelist" | "blacklist">("whitelist");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  useEffect(() => {
+  if (editingFace && isOpen) {
+    // EDIT MODE
+    setName(editingFace.name);
+    setStatus(editingFace.status);
+    setImagePreview(editingFace.imageUrl ?? null);
+  }
+
+  if (!editingFace && isOpen) {
+    // ADD MODE (RESET)
+    setName("");
+    setStatus("whitelist");
+    setImagePreview(null);
+  }
+}, [editingFace, isOpen]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -119,7 +152,7 @@ export function AddFaceModal({ isOpen, onClose, onAdd }: AddFaceModalProps) {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <User className="w-5 h-5 text-primary" />
-                Add to Face Database
+                {editingFace ? "Edit Face Entry" : "Add to Face Database"}
               </h3>
               <button
                 onClick={handleClose}
@@ -280,7 +313,7 @@ export function AddFaceModal({ isOpen, onClose, onAdd }: AddFaceModalProps) {
                 )}
               >
                 <CheckCircle className="w-5 h-5" />
-                Add to Database
+                {editingFace ? "Save Changes" : "Add to Database"}
               </motion.button>
             </div>
           </motion.div>

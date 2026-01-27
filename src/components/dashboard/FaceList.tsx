@@ -13,9 +13,12 @@ interface FaceEntry {
 interface FaceListProps {
   faces: FaceEntry[];
   onSelect?: (face: FaceEntry) => void;
+  onEdit?: (face: FaceEntry) => void;
+  onDelete?: (face: FaceEntry) => void;
 }
 
-export function FaceList({ faces, onSelect }: FaceListProps) {
+
+export function FaceList({ faces, onSelect, onEdit, onDelete }: FaceListProps) {
   const whitelisted = faces.filter(f => f.status === "whitelist");
   const blacklisted = faces.filter(f => f.status === "blacklist");
   
@@ -30,7 +33,15 @@ export function FaceList({ faces, onSelect }: FaceListProps) {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {blacklisted.map((face, index) => (
-              <FaceCard key={face.id} face={face} index={index} onClick={() => onSelect?.(face)} />
+              <FaceCard
+  key={face.id}
+  face={face}
+  index={index}
+  onClick={() => onSelect?.(face)}
+  onEdit={() => onEdit?.(face)}
+  onDelete={() => onDelete?.(face)}
+/>
+
             ))}
           </div>
         </div>
@@ -45,7 +56,15 @@ export function FaceList({ faces, onSelect }: FaceListProps) {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {whitelisted.map((face, index) => (
-              <FaceCard key={face.id} face={face} index={index} onClick={() => onSelect?.(face)} />
+              <FaceCard
+  key={face.id}
+  face={face}
+  index={index}
+  onClick={() => onSelect?.(face)}
+  onEdit={() => onEdit?.(face)}
+  onDelete={() => onDelete?.(face)}
+/>
+
             ))}
           </div>
         </div>
@@ -61,7 +80,20 @@ export function FaceList({ faces, onSelect }: FaceListProps) {
   );
 }
 
-function FaceCard({ face, index, onClick }: { face: FaceEntry; index: number; onClick?: () => void }) {
+function FaceCard({
+  face,
+  index,
+  onClick,
+  onEdit,
+  onDelete,
+}: {
+  face: FaceEntry;
+  index: number;
+  onClick?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
@@ -70,7 +102,7 @@ function FaceCard({ face, index, onClick }: { face: FaceEntry; index: number; on
       whileHover={{ scale: 1.03 }}
       onClick={onClick}
       className={cn(
-        "relative p-3 rounded-lg border cursor-pointer",
+        "group relative p-3 rounded-lg border cursor-pointer",
         "bg-card/50 backdrop-blur-sm transition-all duration-200",
         face.status === "blacklist" && "border-critical/30 hover:border-critical/50",
         face.status === "whitelist" && "border-low/30 hover:border-low/50"
@@ -111,9 +143,37 @@ function FaceCard({ face, index, onClick }: { face: FaceEntry; index: number; on
       )} />
       
       {/* Menu button */}
-      <button className="absolute top-2 left-2 p-1 rounded hover:bg-secondary/50 opacity-0 group-hover:opacity-100 transition-opacity">
-        <MoreVertical className="w-3 h-3 text-muted-foreground" />
+      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+  <div className="relative">
+    <button className="p-1 rounded hover:bg-secondary/50">
+      <MoreVertical className="w-3 h-3 text-muted-foreground" />
+    </button>
+
+    <div className="absolute left-0 mt-1 w-24 bg-card border border-border rounded-lg shadow-lg z-10">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.();
+        }}
+        className="w-full px-3 py-2 text-left text-xs hover:bg-secondary"
+      >
+        Edit
       </button>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete?.();
+        }}
+        className="w-full px-3 py-2 text-left text-xs text-critical hover:bg-critical/10"
+      >
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+
     </motion.div>
   );
 }
