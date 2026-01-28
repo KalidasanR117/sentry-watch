@@ -37,8 +37,9 @@ export function CameraFeed({
       className={cn(
         "camera-feed aspect-video relative group cursor-pointer",
         "border-2 transition-all duration-300",
-        severityColors[severity],
-        severity === "CRITICAL" && "glow-critical"
+        // severityColors[severity],
+        // severity === "CRITICAL" && "glow-critical"
+        "border-border"
       )}
     >
       {/* Simulated feed background */}
