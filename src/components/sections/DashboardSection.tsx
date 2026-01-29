@@ -78,6 +78,12 @@ const handleRestart = async () => {
   await restartLive();
   setCameraState("running");
 };
+  useEffect(() => {
+  fetch("/api/faces")
+    .then(res => res.json())
+    .then(data => setFaces(data))
+    .catch(err => console.error("Failed to load faces", err));
+}, []);
 
 
   /* ===================== BACKEND POLLING ===================== */
@@ -141,12 +147,19 @@ const handleRestart = async () => {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
- const handleAddFace = (face: {
+ const handleAddFace =async  (face: {
   id?: string;
   name: string;
   status: "whitelist" | "blacklist";
   imageUrl?: string;
-}) => {
+}) =>{
+    await fetch(`/api/faces/${face.name}/status`, {
+  method: "POST",
+  body: new URLSearchParams({
+    status: face.status,
+  }),
+});
+
   setFaces(prev => {
     // EDIT MODE
     if (editingFace) {
@@ -154,6 +167,7 @@ const handleRestart = async () => {
         f.id === editingFace.id
           ? {
               ...f,
+              id: face.name,
               name: face.name,
               status: face.status,
               imageUrl: face.imageUrl,
@@ -167,11 +181,12 @@ const handleRestart = async () => {
     return [
       ...prev,
       {
-        id: `f-${Date.now()}`,
+        // id: `f-${Date.now()}`,
+        id: face.name, 
         name: face.name,
         status: face.status,
         imageUrl: face.imageUrl,
-        lastSeen: "Just added",
+        // lastSeen: "Just added",
       },
     ];
   });
@@ -201,7 +216,7 @@ const handleRestart = async () => {
               Real-time security monitoring dashboard
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-  3">
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
               <Wifi className="w-4 h-4 text-primary" />
               Live
@@ -364,9 +379,11 @@ const handleRestart = async () => {
     setEditingFace(face);
     setShowAddFaceModal(true);
   }}
-  onDelete={(face) => {
-    setFaces(prev => prev.filter(f => f.id !== face.id));
-  }}
+  onDelete={async (face) => {
+  await fetch(`/api/faces/${face.name}`, { method: "DELETE" });
+  setFaces(prev => prev.filter(f => f.id !== face.id));
+}}
+
 />
 
 </GlassCard>

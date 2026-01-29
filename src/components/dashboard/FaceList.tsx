@@ -19,7 +19,10 @@ interface FaceListProps {
 
 
 export function FaceList({ faces, onSelect, onEdit, onDelete }: FaceListProps) {
-  const whitelisted = faces.filter(f => f.status === "whitelist");
+  const whitelisted = faces.filter(
+  f => f.status === "whitelist" || f.status === "unknown"
+);
+
   const blacklisted = faces.filter(f => f.status === "blacklist");
   
   return (

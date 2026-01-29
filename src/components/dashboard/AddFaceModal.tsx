@@ -40,26 +40,12 @@ export function AddFaceModal({
   const [status, setStatus] = useState<"whitelist" | "blacklist">("whitelist");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
-  useEffect(() => {
-  if (editingFace && isOpen) {
-    // EDIT MODE
-    setName(editingFace.name);
-    setStatus(editingFace.status);
-    setImagePreview(editingFace.imageUrl ?? null);
-  }
 
-  if (!editingFace && isOpen) {
-    // ADD MODE (RESET)
-    setName("");
-    setStatus("whitelist");
-    setImagePreview(null);
-  }
-}, [editingFace, isOpen]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
+  
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("image/")) {
@@ -71,33 +57,21 @@ export function AddFaceModal({
     }
   };
 
-  const startCapture = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setIsCapturing(true);
-    } catch (err) {
-      console.error("Failed to access camera:", err);
-    }
-  };
-
   const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement("canvas");
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0);
-        setImagePreview(canvas.toDataURL("image/jpeg"));
-      }
-    }
-    stopCapture();
-  };
+  if (!videoRef.current) return;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = videoRef.current.videoWidth;
+  canvas.height = videoRef.current.videoHeight;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.drawImage(videoRef.current, 0, 0);
+  setImagePreview(canvas.toDataURL("image/jpeg"));
+
+  stopCapture();
+};
 
   const stopCapture = () => {
     if (streamRef.current) {
@@ -107,17 +81,46 @@ export function AddFaceModal({
     setIsCapturing(false);
   };
 
-  const handleSubmit = () => {
-    if (name.trim()) {
-      onAdd({
-        name: name.trim(),
-        status,
-        imageUrl: imagePreview || undefined
-      });
-      resetForm();
-      onClose();
-    }
-  };
+const handleSubmit = async () => {
+  if (!name.trim()) return;
+
+  // 🔥 EDIT MODE: no image upload
+  if (editingFace) {
+    onAdd({
+      name: name.trim(),
+      status,
+      imageUrl: editingFace.imageUrl,
+    });
+
+    resetForm();
+    onClose();
+    return;
+  }
+
+  // 🔥 ADD MODE: image required
+  if (!imagePreview) return;
+
+  const blob = await fetch(imagePreview).then(r => r.blob());
+
+  const formData = new FormData();
+  formData.append("name", name.trim());
+  formData.append("status", status);
+  formData.append("image", blob, "face.jpg");
+
+  await fetch("/api/faces/add", {
+    method: "POST",
+    body: formData,
+  });
+
+  onAdd({
+    name: name.trim(),
+    status,
+    imageUrl: imagePreview,
+  });
+
+  resetForm();
+  onClose();
+};
 
   const resetForm = () => {
     setName("");
@@ -130,6 +133,35 @@ export function AddFaceModal({
     stopCapture();
     onClose();
   };
+const startCapture = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false,
+    });
+
+    streamRef.current = stream;
+    setIsCapturing(true); // 🔥 trigger render
+  } catch (err) {
+    console.error("Camera access failed:", err);
+  }
+};
+useEffect(() => {
+  if (!isCapturing) return;
+  if (!videoRef.current) return;
+  if (!streamRef.current) return;
+
+  const video = videoRef.current;
+
+  video.srcObject = streamRef.current;
+  video.onloadedmetadata = () => {
+    video.play();
+  };
+
+  return () => {
+    video.srcObject = null;
+  };
+}, [isCapturing]);
 
   return (
     <AnimatePresence>
@@ -139,7 +171,9 @@ export function AddFaceModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={handleClose}
+          onClick={() => {
+            if (!isCapturing) handleClose();
+          }}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -155,7 +189,9 @@ export function AddFaceModal({
                 {editingFace ? "Edit Face Entry" : "Add to Face Database"}
               </h3>
               <button
-                onClick={handleClose}
+                onClick={() => {
+                            if (!isCapturing) handleClose();
+                          }}
                 className="p-2 rounded-lg hover:bg-secondary transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -171,36 +207,39 @@ export function AddFaceModal({
                 </label>
                 
                 {isCapturing ? (
-                  <div className="space-y-3">
-                    <div className="aspect-video rounded-lg overflow-hidden bg-black">
-                      <video
-                        ref={videoRef}
-                        className="w-full h-full object-cover"
-                        autoPlay
-                        playsInline
-                        muted
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={capturePhoto}
-                        className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium"
-                      >
-                        Capture
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={stopCapture}
-                        className="px-4 py-2 bg-secondary rounded-lg"
-                      >
-                        Cancel
-                      </motion.button>
-                    </div>
-                  </div>
-                ) : imagePreview ? (
+  <div className="space-y-3">
+    <div className="aspect-video rounded-lg overflow-hidden bg-black">
+      <video
+        ref={videoRef}
+        className="w-full h-full rounded-lg object-cover"
+        playsInline
+        muted
+        autoPlay
+      />
+    </div>
+
+    <div className="flex gap-2">
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={capturePhoto}
+        className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium"
+      >
+        Capture
+      </motion.button>
+
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={stopCapture}
+        className="px-4 py-2 bg-secondary rounded-lg"
+      >
+        Cancel
+      </motion.button>
+    </div>
+  </div>
+)
+: imagePreview ? (
                   <div className="space-y-3">
                     <div className="aspect-video rounded-lg overflow-hidden bg-black relative">
                       <img
@@ -218,25 +257,27 @@ export function AddFaceModal({
                   </div>
                 ) : (
                   <div className="flex gap-3">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 p-4 border-2 border-dashed border-border rounded-lg hover:border-primary/50 transition-colors flex flex-col items-center gap-2"
-                    >
-                      <Upload className="w-6 h-6 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Upload</span>
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={startCapture}
-                      className="flex-1 p-4 border-2 border-dashed border-border rounded-lg hover:border-primary/50 transition-colors flex flex-col items-center gap-2"
-                    >
-                      <Camera className="w-6 h-6 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Capture</span>
-                    </motion.button>
-                  </div>
+  <motion.button
+    whileHover={{ scale: 1.02 }}
+    whileTap={{ scale: 0.98 }}
+    onClick={() => fileInputRef.current?.click()}
+    className="flex-1 p-4 border-2 border-dashed border-border rounded-lg hover:border-primary/50 transition-colors flex flex-col items-center gap-2"
+  >
+    <Upload className="w-6 h-6 text-muted-foreground" />
+    <span className="text-sm text-muted-foreground">Upload</span>
+  </motion.button>
+
+  <motion.button
+    whileHover={{ scale: 1.02 }}
+    whileTap={{ scale: 0.98 }}
+    onClick={startCapture}
+    className="flex-1 p-4 border-2 border-dashed border-border rounded-lg hover:border-primary/50 transition-colors flex flex-col items-center gap-2"
+  >
+    <Camera className="w-6 h-6 text-muted-foreground" />
+    <span className="text-sm text-muted-foreground">Capture</span>
+  </motion.button>
+</div>
+
                 )}
                 
                 <input
