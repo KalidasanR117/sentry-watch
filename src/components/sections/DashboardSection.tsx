@@ -25,8 +25,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type TabType = "live" | "upload" | "reports";
+import { ScanFace } from "lucide-react";
+type TabType = "live" | "upload" | "reports" | "facelab";
 const playLive = () => fetch("/api/live/start", { method: "POST" });
 const pauseLive = () => fetch("/api/live/pause", { method: "POST" });
 const stopLive = () => fetch("/api/live/stop", { method: "POST" });
@@ -54,7 +54,23 @@ export function DashboardSection() {
 
   const [faces, setFaces] = useState<FaceEntry[]>([]);
   const [editingFace, setEditingFace] = useState<FaceEntry | null>(null);
-  
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  const startSotaAnalysis = async () => {
+  const formData = new FormData();
+  formData.append("file", selectedFile);
+
+  const res = await fetch("/api/sota/analyze", {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await res.json();
+
+  // 🔥 THIS IS THE MISSING LINE
+  setVideoUrl(`http://localhost:8000/reports/${data.job_id}`);
+};
+
   const [cameraState, setCameraState] = useState<
   "stopped" | "running" | "paused"
 >("stopped");
@@ -268,6 +284,7 @@ const handleRestart = async () => {
             { id: "live" as TabType, label: "Live Monitor", icon: <Eye className="w-4 h-4" /> },
             { id: "upload" as TabType, label: "Video Analysis", icon: <Upload className="w-4 h-4" /> },
             { id: "reports" as TabType, label: "Reports", icon: <FileText className="w-4 h-4" /> },
+            { id: "facelab" as TabType, label: "Deep Face Lab", icon: <ScanFace className="w-4 h-4" /> },
           ].map((tab) => (
             <motion.button
               key={tab.id}
@@ -346,11 +363,26 @@ const handleRestart = async () => {
                   </GlassCard>
                 </motion.div>
               )}
+              {activeTab === "facelab" && (
+                <motion.div
+                  key="facelab"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                   {/* We don't wrap it in GlassCard here because 
+                       DeepFaceLab has its own GlassCard layout */}
+                   <DeepFaceLab />
+                </motion.div>
+              )}
             </AnimatePresence>
 
-            <GlassCard>
-              <EventTimeline events={events} maxItems={5} />
-            </GlassCard>
+            {activeTab !== "facelab" && (
+                <GlassCard>
+                  <EventTimeline events={events} maxItems={5} />
+                </GlassCard>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -403,5 +435,95 @@ const handleRestart = async () => {
 />
 
     </section>
+  );
+}
+function DeepFaceLab() {
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<any>({ status: "idle", progress: 0 });
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status.status !== "processing") return;
+    const interval = setInterval(() => {
+      fetch("/api/sota/status")
+        .then(r => r.json())
+        .then(d => {
+          setStatus(d);
+          if (d.status === "completed") {
+            setResultUrl(`http://localhost:8000/reports/${d.file}`);
+          }
+        });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [status.status]);
+
+  const handleUpload = async () => {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setStatus({ status: "processing", progress: 0 });
+    await fetch("/api/sota/analyze", {
+      method: "POST",
+      body: formData,
+    });
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[500px]">
+      <GlassCard className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-white/10">
+        <ScanFace className="w-16 h-16 text-primary mb-4" />
+        <h3 className="text-xl font-bold mb-2">Deep Face Analysis</h3>
+        <p className="text-gray-400 text-center mb-6">
+          Uses RetinaFace (ResNet50) + ArcFace (ResNet100) <br/>
+          for SOTA offline forensic analysis.
+        </p>
+        
+        <input 
+          type="file" 
+          accept="video/*" 
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="block w-full text-sm text-gray-400 mb-4 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-black hover:file:bg-primary/80"
+        />
+        
+        <button 
+          onClick={handleUpload}
+          disabled={!file || status.status === "processing"}
+          className="px-6 py-2 bg-primary text-black font-bold rounded-lg disabled:opacity-50"
+        >
+          {status.status === "processing" ? "Analyzing..." : "Start GPU Analysis"}
+        </button>
+      </GlassCard>
+
+      <GlassCard className="flex items-center justify-center relative overflow-hidden">
+        {status.status === "processing" && (
+          <div className="text-center w-full px-8">
+            <div className="mb-4 flex justify-between text-sm">
+              <span>Processing on RTX 4050...</span>
+              <span>{status.progress}%</span>
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${status.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {status.status === "completed" && resultUrl && (
+          <video 
+            src={resultUrl} 
+            controls 
+            autoPlay 
+            className="w-full h-full object-contain" 
+          />
+        )}
+
+        {status.status === "idle" && (
+          <div className="text-gray-500">Waiting for input...</div>
+        )}
+      </GlassCard>
+    </div>
   );
 }
