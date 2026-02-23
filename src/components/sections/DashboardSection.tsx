@@ -476,7 +476,7 @@ function DeepFaceLab() {
         <h3 className="text-xl font-bold mb-2">Deep Face Analysis</h3>
         <p className="text-gray-400 text-center mb-6">
           Uses RetinaFace (ResNet50) + ArcFace (ResNet100) <br/>
-          for SOTA offline forensic analysis.
+          for  offline face analysis.
         </p>
         
         <input 
@@ -499,7 +499,7 @@ function DeepFaceLab() {
         {status.status === "processing" && (
           <div className="text-center w-full px-8">
             <div className="mb-4 flex justify-between text-sm">
-              <span>Processing on RTX 4050...</span>
+              <span>Processing...</span>
               <span>{status.progress}%</span>
             </div>
             <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
